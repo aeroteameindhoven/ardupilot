@@ -27,6 +27,10 @@ public:
     {
         AP_Param::setup_object_defaults(this, var_info);
     }
+    void set_external_navigation(float xtrack_error, float wp_distance);
+    void clear_external_navigation();
+
+    float _external_L1_dist = -1.0f;
 
     /* Do not allow copies */
     CLASS_NO_COPY(AP_L1_Control);
@@ -54,6 +58,10 @@ public:
     void update_heading_hold(int32_t navigation_heading_cd) override;
     void update_level_flight(void) override;
     bool reached_loiter_target(void) override;
+    // new variables
+    float _external_crosstrack_error = 0.0f;
+    float _external_wp_distance = 0.0f;
+    bool _use_external_nav_inputs = false;
 
     // set the default NAVL1_PERIOD
     void set_default_period(float period) {
@@ -77,6 +85,8 @@ public:
 private:
     // reference to the AHRS object
     AP_AHRS &_ahrs;
+
+    uint32_t _external_nav_last_ms = 0;
 
     // pointer to the SpdHgtControl object
     const AP_TECS *_tecs;

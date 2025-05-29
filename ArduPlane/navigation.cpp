@@ -298,42 +298,10 @@ void Plane::calc_gndspeed_undershoot()
 // method intended to be used by update_loiter
 void Plane::update_loiter_update_nav(uint16_t radius)
 {
-#if HAL_QUADPLANE_ENABLED
-    if (loiter.start_time_ms != 0 &&
-        quadplane.guided_mode_enabled()) {
-        if (!auto_state.vtol_loiter) {
-            auto_state.vtol_loiter = true;
-            // reset loiter start time, so we don't consider the point
-            // reached till we get much closer
-            loiter.start_time_ms = 0;
-            quadplane.guided_start();
-        }
-        return;
+    if (!reached_loiter_target()) {
+        return; // Ensure we don't switch to loiter mode before reaching the waypoint
     }
-#endif
 
-#if HAL_QUADPLANE_ENABLED
-    const bool quadplane_qrtl_switch = (control_mode == &mode_rtl && quadplane.available() && quadplane.rtl_mode == QuadPlane::RTL_MODE::SWITCH_QRTL);
-#else
-    const bool quadplane_qrtl_switch = false;
-#endif
-
-    if ((loiter.start_time_ms == 0 &&
-         (control_mode == &mode_auto || control_mode == &mode_guided) &&
-         auto_state.crosstrack &&
-         current_loc.get_distance(next_WP_loc) > 3 * nav_controller->loiter_radius(radius)) ||
-        quadplane_qrtl_switch) {
-        /*
-          if never reached loiter point and using crosstrack and somewhat far away from loiter point
-          navigate to it like in auto-mode for normal crosstrack behavior
-
-          we also use direct waypoint navigation if we are a quadplane
-          that is going to be switching to QRTL when it gets within
-          RTL_RADIUS
-        */
-        nav_controller->update_waypoint(prev_WP_loc, next_WP_loc);
-        return;
-    }
     nav_controller->update_loiter(next_WP_loc, radius, loiter.direction);
 }
 
@@ -342,33 +310,24 @@ void Plane::update_loiter(uint16_t radius)
     if (radius <= 1) {
         // if radius is <=1 then use the general loiter radius. if it's small, use default
         radius = (abs(aparm.loiter_radius) <= 1) ? LOITER_RADIUS_DEFAULT : abs(aparm.loiter_radius);
-        if (next_WP_loc.loiter_ccw == 1) {
-            loiter.direction = -1;
-        } else {
-            loiter.direction = (aparm.loiter_radius < 0) ? -1 : 1;
-        }
+        loiter.direction = (next_WP_loc.loiter_ccw == 1) ? -1 : (aparm.loiter_radius < 0 ? -1 : 1);
     }
 
-    // the radius actually being used by the controller is required by other functions
     loiter.radius = (float)radius;
 
+    // Ensure the waypoint is reached before loitering
+    if (!reached_loiter_target()) {
+        // Navigate to the waypoint first
+        nav_controller->update_waypoint(prev_WP_loc, next_WP_loc);
+        return;
+    }
+
+    // If waypoint reached, start loitering
     update_loiter_update_nav(radius);
 
     if (loiter.start_time_ms == 0) {
-        if (reached_loiter_target() ||
-            auto_state.wp_proportion > 1) {
-            // we've reached the target, start the timer
-            loiter.start_time_ms = millis();
-            if (control_mode->is_guided_mode()) {
-                // starting a loiter in GUIDED means we just reached the target point
-                gcs().send_mission_item_reached_message(0);
-            }
-#if HAL_QUADPLANE_ENABLED
-            if (quadplane.guided_mode_enabled()) {
-                quadplane.guided_start();
-            }
-#endif
-        }
+        loiter.start_time_ms = millis();
+        gcs().send_mission_item_reached_message(0);
     }
 }
 
@@ -457,5 +416,5 @@ bool Plane::reached_loiter_target(void)
         return auto_state.wp_distance < 3;
     }
 #endif
-    return nav_controller->reached_loiter_target();
+    return auto_state.wp_distance < 1.0; // Ensure the plane gets very close before loitering
 }

@@ -49,6 +49,18 @@ const AP_Param::GroupInfo AP_L1_Control::var_info[] = {
 // Modified to enable period and damping of guidance loop to be set explicitly
 // Modified to provide explicit control over capture angle
 
+void AP_L1_Control::set_external_navigation(float xtrack_error, float wp_distance)
+{
+    _external_crosstrack_error = xtrack_error;
+    _external_wp_distance = wp_distance;
+    _use_external_nav_inputs = true;
+    _external_nav_last_ms = AP_HAL::millis();  // update the timestamp
+}
+
+void AP_L1_Control::clear_external_navigation()
+{
+    _use_external_nav_inputs = false;
+}
 
 /*
   Wrap AHRS yaw if in reverse - radians
@@ -205,6 +217,11 @@ void AP_L1_Control::_prevent_indecision(float &Nu)
 // update L1 control for waypoint navigation
 void AP_L1_Control::update_waypoint(const Location &prev_WP, const Location &next_WP, float dist_min)
 {
+    // Timeout external nav input if it's too old
+    if (_use_external_nav_inputs && (AP_HAL::millis() - _external_nav_last_ms > 1000)) {
+        _use_external_nav_inputs = false;
+        gcs().send_text(MAV_SEVERITY_WARNING, "L1 ext nav timeout — disabled");
+    }
 
     Location _current_loc;
     float Nu;
@@ -274,12 +291,12 @@ void AP_L1_Control::update_waypoint(const Location &prev_WP, const Location &nex
     const Vector2f A_air = prev_WP.get_distance_NE(_current_loc);
 
     // calculate distance to target track, for reporting
-    _crosstrack_error = A_air % AB;
+    _crosstrack_error = _use_external_nav_inputs ? _external_crosstrack_error : (A_air % AB);
 
     // Determine if the aircraft is behind a +-135 degree degree arc centred on WP A
     // and further than L1 distance from WP A. Then use WP A as the L1 reference point
     // Otherwise do normal L1 guidance
-    float WP_A_dist = A_air.length();
+    float WP_A_dist = _use_external_nav_inputs ? _external_wp_distance : A_air.length();
     float alongTrackDist = A_air * AB;
     if (WP_A_dist > _L1_dist && alongTrackDist/MAX(WP_A_dist, 1.0f) < -0.7071f)
     {

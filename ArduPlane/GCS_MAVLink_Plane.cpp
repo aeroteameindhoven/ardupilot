@@ -799,6 +799,31 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_int_packet(const mavlink_command_in
     case MAV_CMD_DO_CHANGE_ALTITUDE:
         return handle_command_int_DO_CHANGE_ALTITUDE(packet);
 
+    case 43007: { // MAV_CMD_SET_L1_EXTERNAL_NAV
+        // Example usage of param1 (xtrack), param2 (distance), param3 (enable)
+            if (packet.param3 > 0.5f) {
+                plane.L1_controller.set_external_navigation(packet.param1,packet.param2);
+            } else {
+                plane.L1_controller.clear_external_navigation();
+            }
+
+            return MAV_RESULT_ACCEPTED;
+        }
+        return MAV_RESULT_FAILED;
+
+    case 43008: { // MAV_CMD_SET_TECS_EXTERNAL_NAV
+        // Example usage of param1 (airspeed_error), param2 (altitude_error), param3 (enable)
+        if (packet.param3 > 0.5f) {
+            plane.TECS_controller._external_nav.airspeed_error = packet.param1;
+            plane.TECS_controller._external_nav.altitude_error = packet.param2;
+            plane.TECS_controller._external_nav.enabled = true;
+        } else {
+            plane.TECS_controller._external_nav.enabled = false;
+        }
+
+        return MAV_RESULT_ACCEPTED;
+    }
+
 #if AP_PLANE_OFFBOARD_GUIDED_SLEW_ENABLED
     // special 'slew-enabled' guided commands here... for speed,alt, and direction commands
     case MAV_CMD_GUIDED_CHANGE_SPEED:
@@ -1068,6 +1093,20 @@ void GCS_MAVLINK_Plane::handle_message(const mavlink_message_t &msg)
         handle_set_position_target_global_int(msg);
         break;
 
+    case MAVLINK_MSG_ID_L1_EXTERNAL_NAV: {
+        mavlink_l1_external_nav_t packet;
+        mavlink_msg_l1_external_nav_decode(&msg, &packet);
+
+        if (packet.enable > 0) {
+            plane.L1_controller.set_external_navigation(packet.xtrack_error, packet.wp_distance);
+            gcs().send_text(MAV_SEVERITY_INFO, "✅ L1 ext nav: xtrack=%.2f dist=%.2f", packet.xtrack_error, packet.wp_distance);
+        } else {
+            plane.L1_controller.clear_external_navigation();
+            gcs().send_text(MAV_SEVERITY_INFO, "🛑 L1 ext nav disabled");
+        }
+        break;
+    }
+
     default:
         GCS_MAVLINK::handle_message(msg);
         break;
@@ -1111,13 +1150,13 @@ void GCS_MAVLINK_Plane::handle_set_attitude_target(const mavlink_message_t &msg)
         uint8_t attitude_mask = att_target.type_mask & 0b10000111; // q plus rpy
 
         uint32_t now = AP_HAL::millis();
-        if ((attitude_mask & 0b10000001) ||    // partial, including roll
-                (attitude_mask == 0b10000000)) { // all angles
-            plane.guided_state.forced_rpy_cd.x = degrees(q.get_euler_roll()) * 100.0f;
+        // if ((attitude_mask & 0b10000001) ||    // partial, including roll
+        //         (attitude_mask == 0b10000000)) { // all angles
+        //     plane.guided_state.forced_rpy_cd.x = degrees(q.get_euler_roll()) * 100.0f;
 
-            // Update timer for external roll to the nav control
-            plane.guided_state.last_forced_rpy_ms.x = now;
-        }
+        //     // Update timer for external roll to the nav control
+        //     plane.guided_state.last_forced_rpy_ms.x = now;
+        // }
 
         if ((attitude_mask & 0b10000010) ||    // partial, including pitch
                 (attitude_mask == 0b10000000)) { // all angles
