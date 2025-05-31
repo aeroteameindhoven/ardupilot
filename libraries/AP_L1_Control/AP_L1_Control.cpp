@@ -1,3 +1,4 @@
+#include <GCS_MAVLink/GCS.h>
 #include <AP_HAL/AP_HAL.h>
 #include "AP_L1_Control.h"
 
@@ -97,7 +98,7 @@ int32_t AP_L1_Control::nav_roll_cd(void) const
 		liftForce * sin(roll) = gravityForce * lateralAcceleration / gravityAcceleration; // as mass = gravityForce/gravityAcceleration
 		see issue 24319 [https://github.com/ArduPilot/ardupilot/issues/24319]
 		Multiplier 100.0f is for converting degrees to centidegrees
-		Made changes to avoid zero division as proposed by Andrew Tridgell: https://github.com/ArduPilot/ardupilot/pull/24331#discussion_r1267798397		 
+		Made changes to avoid zero division as proposed by Andrew Tridgell: https://github.com/ArduPilot/ardupilot/pull/24331#discussion_r1267798397
 	*/
 	float pitchLimL1 = radians(60); // Suggestion: constraint may be modified to pitch limits if their absolute values are less than 90 degree and more than 60 degrees.
 	float pitchL1 = constrain_float(_ahrs.get_pitch(),-pitchLimL1,pitchLimL1);
